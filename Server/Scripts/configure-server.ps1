@@ -11,9 +11,9 @@ $configFile = "c:\Octopus\OctopusServer.config"
 . ../octopus-common.ps1
 
 function Configure-OctopusDeploy(){
-  
+
   $configAlreadyExists = Test-Path $configFile
-  
+
   if (-not($configAlreadyExists)) {
     # work around https://github.com/docker/docker/issues/20127
     Copy-item "c:\OctopusServer.config.orig" $configFile
@@ -41,7 +41,7 @@ function Configure-OctopusDeploy(){
     '--create'
   )
   Execute-Command $ServerExe $args
-  
+
    Write-Log "Configuring Paths ..."
   $args = @(
     'path',
@@ -108,34 +108,93 @@ function Validate-Variables(){
   else {
     Write-Log " - masterkey not supplied. A new key will be generated automatically"
   }
-  
+
   $maskedConnectionString = $sqlDbConnectionString -replace "password=.*?;", "password=###########;"
   Write-Log " - using database '$maskedConnectionString'"
   Write-Log " - local admin user '$octopusAdminUsername'"
   Write-Log " - local admin password '##########'"
 }
 
+function Wait-Db {
+    param($Delay = 1)
+
+    $Delay = $Delay * 1000
+    $handler = [System.Data.SqlClient.SqlInfoMessageEventHandler] { Write-Verbose $_ }
+    $Counter = 0
+    do {
+        $conn = [System.Data.SqlClient.SQLConnection]::new()
+        $conn.ConnectionString = $env:sqlDbConnectionString
+        $conn.add_InfoMessage( $handler )
+        $result = 0
+
+        try {
+            $conn.Open()
+            $command = [System.Data.SqlClient.SqlCommand]::new("Select 1",$conn)
+            $command.CommandTimeout = $QueryTimeout
+            try {
+                $reader = $command.ExecuteReader()
+                try
+                {
+                    while ($reader.Read())
+                    {
+                        Write-Host ("{0}, {1}" -f $reader[0], $reader[1])
+                        $result = $reader[1]
+                    }
+                }
+                catch
+                {
+                    Write-Log "Read finished!"
+                }
+                finally
+                {
+                    # Always call Close when done reading.
+                    $reader.Close();
+                }
+            }
+            catch
+            {
+                Write-Log "Database reader failed! Sleep 250ms"
+            }
+        }
+        catch
+        {
+            Write-Log "Database server not up yet. Sleep 500ms"
+            Start-Sleep -Milli 250
+            $Counter += 250
+        }
+        Start-Sleep -Milli 250
+        $Counter += 250
+    } while($result -eq 0 -and $Counter -lt $Delay)
+    Write-Log "Delayed $Counter ms"
+}
+
 try
-{  
-  Write-Log "==============================================="
-  Write-Log "Configuring Octopus Deploy"
-  if(Test-Path c:\octopus-configuration.initstate){
-	Write-Verbose "This Server has already been initialized and registered so reconfiguration will be skipped. 
-If you need to change the configuration, please start a new container";
-	exit 0
-  }
-  
-  Validate-Variables;
-  Write-Log "==============================================="
+{
+    Write-Log "==============================================="
+    Write-Log "==== Wait for database"
+    Write-Log "==============================================="
+    Wait-Db
 
-  Configure-OctopusDeploy
-  "Configuration complete." | Set-Content "c:\octopus-configuration.initstate"
+    Write-Log "==============================================="
+    Write-Log "==== Configuring Octopus Deploy"
+    Write-Log "==============================================="
+    if(Test-Path c:\octopus-configuration.initstate){
+        Write-Verbose "This Server has already been initialized and registered so reconfiguration will be skipped.`nIf you need to change the configuration, please start a new container";
+        exit 0
+    }
 
-  Write-Log "Configuration successful."
-  Write-Log ""
+    Write-Log "==============================================="
+
+    Validate-Variables
+
+    Configure-OctopusDeploy
+    "Configuration complete." | Set-Content "c:\octopus-configuration.initstate"
+
+    Write-Log "Configuration successful."
+    Write-Log ""
 }
 catch
 {
-  Write-Log $_
-  exit 2
+    Write-Log $_
+    exit 2
 }

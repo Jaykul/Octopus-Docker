@@ -52,8 +52,8 @@ $attemptNumber = 0
 while ($true) {
   $attemptNumber = $attemptNumber + 1
   write-host "Attempt #$attemptNumber to build container..."
-  $result = Execute-Command "docker" "build --tag octopusdeploy/octopusdeploy-prerelease:$OctopusVersion --build-arg OctopusVersion=$OctopusVersion --file Server\Dockerfile ."
-  $result.stdout >  .\Logs\server.log
+  $result = Execute-Command "docker-compose" "build --build-arg OctopusVersion=$OctopusVersion octopus"
+  $result.stdout > .\Logs\server.log
   $result.stderr > .\Logs\server-err.log
   if ($result.stderr -like "*encountered an error during Start: failure in a Windows system call: This operation returned because the timeout period expired. (0x5b4)*") {
     if ($attemptNumber -gt $maxAttempts) {

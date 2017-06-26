@@ -6,23 +6,51 @@ services:
       sa_password: "${SA_PASSWORD}"
       ACCEPT_EULA: "Y"
     ports:
-      - "1433:1433" # REMARK: This is currently required, needs investigation
+      - 1433:1433
     healthcheck:
       test: [ "CMD", "sqlcmd", "-U", "sa", "-P", "${SA_PASSWORD}", "-Q", "select 1" ]
-      interval: 1s
-      retries: 20
+      interval: 30s
+      retries: 5
   octopus:
-    image: octopusdeploy/octopusdeploy-prerelease:${OCTOPUS_VERSION}
+    # image: octopusdeploy/octopusdeploy:${OCTOPUS_VERSION}
+    build:
+      context: .
+      dockerfile: Server/Dockerfile
+      args:
+        OctopusVersion: "3.13.2"
     environment:
       OctopusAdminUsername: "${OCTOPUS_ADMIN_USERNAME}"
       OctopusAdminPassword: "${OCTOPUS_ADMIN_PASSWORD}"
       sqlDbConnectionString: "Server=db,1433;Initial Catalog=Octopus;Persist Security Info=False;User ID=sa;Password=${SA_PASSWORD};MultipleActiveResultSets=False;Connection Timeout=30;"
     ports:
-     - "81"
+      - 80:81
+    volumes:
+      # Volumes are shared live, so you can copy files back and forth
+      - .\Shared:C:\Shared:rw
+      - .\Import:C:\Import:rw
+      - .\Installers:C:\Installers:rw
     depends_on:
       db:
         condition: service_healthy
     stdin_open: true #Process sits and waits for ReadLine
+  # tentacle:
+  #   # image: octopusdeploy/octopusdeploy-tentacle:${OCTOPUS_VERSION}
+  #   build:
+  #     context: .
+  #     dockerfile: Tentacle/Dockerfile
+  #     args:
+  #       OctopusVersion: "3.11.2"
+  #   environment:
+  #     OctopusAdminUsername: "${OCTOPUS_ADMIN_USERNAME}"
+  #     OctopusAdminPassword: "${OCTOPUS_ADMIN_PASSWORD}"
+  #     sqlDbConnectionString: "Server=db,1433;Initial Catalog=Octopus;Persist Security Info=False;User ID=sa;Password=${SA_PASSWORD};MultipleActiveResultSets=False;Connection Timeout=30;"
+  #   ports:
+  #    - "81"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   stdin_open: true #Process sits and waits for ReadLine
+
 networks:
   default:
     external:
